@@ -10,6 +10,12 @@ export default function DayView() {
   const { stage } = useLocalSearchParams();
   const [schedule, setSchedule] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
+
+  const [schoolTimes, setSchoolTimes] = useState({
+    startTime: '',
+    endTime: ''
+  });
+
   const [newItem, setNewItem] = useState({
     time: '',
     subject: '',
@@ -17,6 +23,7 @@ export default function DayView() {
   });
   const [progress, setProgress] = useState(0);
   const [timeStatus, setTimeStatus] = useState('');
+  const [isSettingTimes, setIsSettingTimes] = useState(false);
 
   const timeToMinutes = useCallback((timeStr) => {
     const [time, period] = timeStr.split(' ');
@@ -27,15 +34,15 @@ export default function DayView() {
   }, []);
 
   const updateTimeStatus = useCallback(() => {
-    if (schedule.length === 0) {
-      setTimeStatus('No schedule items');
+    if (!schoolTimes.startTime || !schoolTimes.endTime) {
+      setTimeStatus('Please set school start and end times');
       return;
     }
 
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
-    const startTime = timeToMinutes(schedule[0].time);
-    const endTime = timeToMinutes(schedule[schedule.length - 1].time);
+    const startTime = timeToMinutes(schoolTimes.startTime);
+    const endTime = timeToMinutes(schoolTimes.endTime);
 
     if (currentTime < startTime) {
       const minutesUntilStart = startTime - currentTime;
@@ -48,17 +55,17 @@ export default function DayView() {
       const minutesRemaining = endTime - currentTime;
       const hours = Math.floor(minutesRemaining / 60);
       const minutes = minutesRemaining % 60;
-      setTimeStatus(`${hours > 0 ? `${hours}h ` : ''}${minutes}m remaining`);
+      setTimeStatus(`${hours > 0 ? `${hours}h ` : ''}${minutes}m until school ends`);
     }
-  }, [schedule, timeToMinutes]);
+  }, [schoolTimes, timeToMinutes]);
 
   const updateProgress = useCallback(() => {
-    if (schedule.length === 0) return;
+    if (!schoolTimes.startTime || !schoolTimes.endTime) return;
 
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
-    const startTime = timeToMinutes(schedule[0].time);
-    const endTime = timeToMinutes(schedule[schedule.length - 1].time);
+    const startTime = timeToMinutes(schoolTimes.startTime);
+    const endTime = timeToMinutes(schoolTimes.endTime);
     
     if (currentTime < startTime) {
       setProgress(0);
@@ -68,28 +75,37 @@ export default function DayView() {
       const currentProgress = ((currentTime - startTime) / (endTime - startTime)) * 100;
       setProgress(Math.max(0, Math.min(100, currentProgress)));
     }
-  }, [schedule, timeToMinutes]);
+  }, [schoolTimes, timeToMinutes]);
 
   // Load schedule on mount
   useEffect(() => {
     loadSchedule();
+    loadSchoolTimes();
   }, [stage]);
 
   // Setup timer for updates
   useEffect(() => {
-    if (schedule.length === 0) return;
-    
     const updateTime = () => {
       updateProgress();
       updateTimeStatus();
     };
 
-    // Initial update
     updateTime();
-    
     const interval = setInterval(updateTime, 60000); // Update every minute
     return () => clearInterval(interval);
-  }, [schedule.length, updateProgress, updateTimeStatus]);
+  }, [schoolTimes, updateProgress, updateTimeStatus]);
+
+  const loadSchoolTimes = async () => {
+    try {
+      const savedTimes = await AsyncStorage.getItem(SCHOOL_TIMES_KEY);
+      if (savedTimes) {
+        const parsedTimes = JSON.parse(savedTimes);
+        setSchoolTimes(parsedTimes[stage] || { startTime: '', endTime: '' });
+      }
+    } catch (error) {
+      console.error('Error loading school times:', error);
+    }
+  };
 
   const loadSchedule = async () => {
     try {
@@ -100,6 +116,19 @@ export default function DayView() {
       }
     } catch (error) {
       console.error('Error loading schedule:', error);
+    }
+  };
+
+  const saveSchoolTimes = async (times) => {
+    try {
+      const savedTimes = await AsyncStorage.getItem(SCHOOL_TIMES_KEY);
+      const parsedTimes = savedTimes ? JSON.parse(savedTimes) : {};
+      parsedTimes[stage] = times;
+      await AsyncStorage.setItem(SCHOOL_TIMES_KEY, JSON.stringify(parsedTimes));
+      setSchoolTimes(times);
+      setIsSettingTimes(false);
+    } catch (error) {
+      console.error('Error saving school times:', error);
     }
   };
 
@@ -129,9 +158,66 @@ export default function DayView() {
     setNewItem({ time: '', subject: '', location: '' });
   };
 
+  const validateTime = (timeStr) => {
+    const timeRegex = /^(1[0-2]|0?[1-9]):[0-5][0-9] (AM|PM)$/i;
+    return timeRegex.test(timeStr);
+  };
+
+
+  const handleSaveSchoolTimes = () => {
+    if (!validateTime(schoolTimes.startTime) || !validateTime(schoolTimes.endTime)) {
+      Alert.alert('Invalid Time Format', 'Please use format: HH:MM AM/PM (e.g., 8:30 AM)');
+      return;
+    }
+
+    const startMinutes = timeToMinutes(schoolTimes.startTime);
+    const endMinutes = timeToMinutes(schoolTimes.endTime);
+
+    if (endMinutes <= startMinutes) {
+      Alert.alert('Invalid Times', 'End time must be after start time');
+      return;
+    }
+
+    saveSchoolTimes(schoolTimes);
+  };
+
+
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>Today's Schedule</Text>
+
+      {/* School Times Setup */}
+      <TouchableOpacity
+        style={styles.editButton}
+        onPress={() => setIsSettingTimes(!isSettingTimes)}
+      >
+        <Text style={styles.editButtonText}>
+          {isSettingTimes ? 'Cancel' : 'Set School Hours'}
+        </Text>
+      </TouchableOpacity>
+
+      {isSettingTimes && (
+        <View style={styles.form}>
+          <TextInput
+            style={styles.input}
+            placeholder="School Start Time (e.g., 8:30 AM)"
+            value={schoolTimes.startTime}
+            onChangeText={(text) => setSchoolTimes(prev => ({ ...prev, startTime: text }))}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="School End Time (e.g., 3:30 PM)"
+            value={schoolTimes.endTime}
+            onChangeText={(text) => setSchoolTimes(prev => ({ ...prev, endTime: text }))}
+          />
+          <TouchableOpacity 
+            style={styles.addButton}
+            onPress={handleSaveSchoolTimes}
+          >
+            <Text style={styles.addButtonText}>Save School Hours</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Progress Bar */}
       <View style={styles.progressContainer}>
