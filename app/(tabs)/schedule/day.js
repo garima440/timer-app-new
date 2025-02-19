@@ -10,6 +10,8 @@ export default function DayView() {
   const { stage } = useLocalSearchParams();
   const [schedule, setSchedule] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
+  const [displayMode, setDisplayMode] = useState('progress'); 
+  const [secondsRemaining, setSecondsRemaining] = useState(0);
 
   const [schoolTimes, setSchoolTimes] = useState({
     startTime: '',
@@ -33,35 +35,51 @@ export default function DayView() {
     return hours * 60 + minutes;
   }, []);
 
+  const timeToSeconds = useCallback((timeStr) => {
+    const [time, period] = timeStr.split(' ');
+    let [hours, minutes] = time.split(':').map(Number);
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    return hours * 3600 + minutes * 60;
+  }, []);
+
   const updateTimeStatus = useCallback(() => {
     if (!schoolTimes.startTime || !schoolTimes.endTime) {
       setTimeStatus('Please set school start and end times');
       return;
     }
-
+  
     const now = new Date();
-    const currentTime = now.getHours() * 60 + now.getMinutes();
-    const startTime = timeToMinutes(schoolTimes.startTime);
-    const endTime = timeToMinutes(schoolTimes.endTime);
-
-    if (currentTime < startTime) {
-      const minutesUntilStart = startTime - currentTime;
-      const hours = Math.floor(minutesUntilStart / 60);
-      const minutes = minutesUntilStart % 60;
-      setTimeStatus(`School starts in ${hours > 0 ? `${hours}h ` : ''}${minutes}m`);
-    } else if (currentTime > endTime) {
+    const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const startSeconds = timeToSeconds(schoolTimes.startTime);
+    const endSeconds = timeToSeconds(schoolTimes.endTime);
+  
+    if (currentSeconds < startSeconds) {
+      const secondsUntilStart = startSeconds - currentSeconds;
+      setSecondsRemaining(secondsUntilStart);
+      const hours = Math.floor(secondsUntilStart / 3600);
+      const minutes = Math.floor((secondsUntilStart % 3600) / 60);
+      const seconds = secondsUntilStart % 60;
+      setTimeStatus(`School starts in ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+    } else if (currentSeconds > endSeconds) {
       setTimeStatus('School day has ended');
+      setSecondsRemaining(0);
     } else {
-      const minutesRemaining = endTime - currentTime;
-      const hours = Math.floor(minutesRemaining / 60);
-      const minutes = minutesRemaining % 60;
-      setTimeStatus(`${hours > 0 ? `${hours}h ` : ''}${minutes}m until school ends`);
+      const secondsRemaining = endSeconds - currentSeconds;
+      setSecondsRemaining(secondsRemaining);
+      const hours = Math.floor(secondsRemaining / 3600);
+      const minutes = Math.floor((secondsRemaining % 3600) / 60);
+      const seconds = secondsRemaining % 60;
+      setTimeStatus(`${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} until school ends`);
     }
-  }, [schoolTimes, timeToMinutes]);
+  }, [schoolTimes, timeToSeconds]);
 
   const updateProgress = useCallback(() => {
-    if (!schoolTimes.startTime || !schoolTimes.endTime) return;
-
+    if (!schoolTimes.startTime || !schoolTimes.endTime) {
+      setProgress(0);
+      return;
+    }
+  
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
     const startTime = timeToMinutes(schoolTimes.startTime);
@@ -91,7 +109,7 @@ export default function DayView() {
     };
 
     updateTime();
-    const interval = setInterval(updateTime, 60000); // Update every minute
+    const interval = setInterval(updateTime, 1000); // Update every minute
     return () => clearInterval(interval);
   }, [schoolTimes, updateProgress, updateTimeStatus]);
 
@@ -181,6 +199,32 @@ export default function DayView() {
     saveSchoolTimes(schoolTimes);
   };
 
+  const TimerDisplay = () => {
+    return (
+      <View style={styles.timerSection}>
+        <TouchableOpacity 
+          style={[
+            styles.toggleButton,
+            { backgroundColor: displayMode === 'progress' ? '#3b82f6' : '#4b5563' }
+          ]}
+          onPress={() => setDisplayMode('progress')}
+        >
+          <Text style={styles.toggleButtonText}>Progress</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[
+            styles.toggleButton,
+            { backgroundColor: displayMode === 'countdown' ? '#3b82f6' : '#4b5563' }
+          ]}
+          onPress={() => setDisplayMode('countdown')}
+        >
+          <Text style={styles.toggleButtonText}>Timer</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
 
   return (
     <ScrollView style={styles.container}>
@@ -219,13 +263,28 @@ export default function DayView() {
         </View>
       )}
 
-      {/* Progress Bar */}
+      {/* Progress Bar OR Countdown */}
+      <View>
+      <TimerDisplay />
       <View style={styles.progressContainer}>
-        <View style={[styles.progressBar, { width: `${progress}%` }]} />
-        <Text style={styles.progressText}>
-          {timeStatus || `${Math.round(progress)}% of school day complete`}
-        </Text>
+        {!schoolTimes.startTime || !schoolTimes.endTime ? (
+          <Text style={styles.progressText}>
+            Please set school hours
+          </Text>
+        ) : displayMode === 'progress' ? (
+          <>
+            <View style={[styles.progressBar, { width: `${progress}%` }]} />
+            <Text style={styles.progressText}>
+              {`${Math.round(progress)}% of school day complete`}
+            </Text>
+          </>
+        ) : (
+          <Text style={[styles.progressText, styles.countdownText]}>
+            {timeStatus}
+          </Text>
+        )}
       </View>
+    </View>
 
       {/* Add Schedule Item Form */}
       <TouchableOpacity
@@ -294,27 +353,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 8,
     textAlign: 'center',
-  },
-  progressContainer: {
-    height: 32,
-    backgroundColor: '#f3f4f6',
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 12,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: '100%',
-    backgroundColor: '#4CAF50',
-  },
-  progressText: {
-    position: 'absolute',
-    width: '100%',
-    textAlign: 'center',
-    lineHeight: 32,
-    color: '#000',
-    fontSize: 13,
   },
   editButton: {
     backgroundColor: '#3b82f6',
@@ -412,5 +450,61 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 6,
     marginHorizontal: 4,
+  },
+  displayToggle: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    zIndex: 1,
+    padding: 4,
+  },
+  toggleText: {
+    fontSize: 16,
+  },
+  progressText: {
+    position: 'absolute',
+    width: '100%',
+    textAlign: 'center',
+    lineHeight: 32,
+    color: '#000',
+    fontSize: 13,
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#4CAF50',
+    transition: 'width 0.3s ease',
+  },
+
+  timerSection: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    gap: 8,
+  },
+  toggleButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  toggleButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  progressContainer: {
+    height: 40, 
+    backgroundColor: '#f3f4f6',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  countdownText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
