@@ -1,8 +1,11 @@
 // app/(tabs)/schedule/index.js
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useState, useEffect } from 'react';
 import { FontAwesome } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const SELECTED_STAGE_KEY = 'selectedStage';
 
 const timeViews = {
   elementary: [
@@ -28,17 +31,40 @@ const timeViews = {
 };
 
 export default function Schedule() {
-  const { stage } = useLocalSearchParams();
   const router = useRouter();
   const [selectedView, setSelectedView] = useState(null);
+  const [currentStage, setCurrentStage] = useState(null);
 
-  const views = timeViews[stage] || timeViews.elementary;
+  // Load selected stage on mount
+  useEffect(() => {
+    loadSelectedStage();
+  }, []);
 
-  const handleViewSelect = (view) => {
-    setSelectedView(view);
-    router.push(`/schedule/${view.id}?stage=${stage}`);
+  const loadSelectedStage = async () => {
+    try {
+      const savedStage = await AsyncStorage.getItem(SELECTED_STAGE_KEY);
+      if (savedStage) {
+        setCurrentStage(savedStage);
+      } else {
+        // If no stage selected, prompt user to select one in Home tab
+        alert('Please select your education stage in the Home tab first');
+      }
+    } catch (error) {
+      console.error('Error loading selected stage:', error);
+    }
   };
 
+  const handleViewSelect = (view) => {
+    if (!currentStage) {
+      alert('Please select your education stage in the Home tab first');
+      return;
+    }
+    setSelectedView(view);
+    router.push(`/schedule/${view.id}?stage=${currentStage}`);
+  };
+
+  const views = timeViews[currentStage] || [];
+  
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>Choose Your View</Text>
