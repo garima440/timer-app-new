@@ -3,17 +3,18 @@ import { useLocalSearchParams } from 'expo-router';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
-  SCHOOL_TIMES_KEY,  
+  STORAGE_KEY,  
   timeToMinutes, 
   timeToSeconds, 
   validateTime,
   formatTime
 } from '../../utils/timeUtils';
-
-const STORAGE_KEY = 'scheduleData';
+import { useSchoolTimes } from '../../context/SchoolTimeContext';
+import ProgressDisplay from '../../components/ProgressDisplay';
 
 export default function DayView() {
   const { stage } = useLocalSearchParams();
+  const { schoolTimes } = useSchoolTimes(); // Get times from context
   const [schedule, setSchedule] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [displayMode, setDisplayMode] = useState('progress');
@@ -24,12 +25,6 @@ export default function DayView() {
     time: '',
     subject: '',
     location: ''
-  });
-  const [schoolTimes, setSchoolTimes] = useState({
-    elementary: { startTime: '', endTime: '' },
-    middle: { startTime: '', endTime: '' },
-    high: { startTime: '', endTime: '' },
-    college: { startTime: '', endTime: '' }
   });
 
   const loadSchedule = async () => {
@@ -74,74 +69,92 @@ export default function DayView() {
     setNewItem({ time: '', subject: '', location: '' });
   };
 
-  // Rest of your existing code...
-  // Update the callback functions to reduce unnecessary logs
-const updateTimeStatus = useCallback(() => {
-  const stageTimes = schoolTimes[stage];
+
+
+  // Update callbacks to use context 
+  const updateTimeStatus = useCallback(() => {
+    const stageTimes = schoolTimes[stage];
+    
+    if (!stageTimes?.startTime || !stageTimes?.endTime) {
+      setTimeStatus('Please set school hours in Settings');
+      return;
+    }
   
-  if (!stageTimes?.startTime || !stageTimes?.endTime) {
-    setTimeStatus('Please set school hours in Settings');
-    return;
-  }
+    const now = new Date();
+    const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const startSeconds = timeToSeconds(stageTimes.startTime);
+    let endSeconds = timeToSeconds(stageTimes.endTime);
+    
+    // Handle cases where end time is earlier in the day than start time (overnight)
+    if (endSeconds < startSeconds) {
+      endSeconds += 24 * 3600; // Add 24 hours in seconds
+    }
+  
+    if (currentSeconds < startSeconds) {
+      const secondsUntilStart = startSeconds - currentSeconds;
+      setTimeStatus(`School starts in ${formatTime(secondsUntilStart)}`);
+    } else if (currentSeconds > endSeconds) {
+      setTimeStatus('School day has ended');
+    } else {
+      const secondsUntilEnd = endSeconds - currentSeconds;
+      setTimeStatus(`${formatTime(secondsUntilEnd)} until school ends`);
+    }
+  }, [schoolTimes, stage]);
 
-  const now = new Date();
-  const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-  const startSeconds = timeToSeconds(stageTimes.startTime);
-  const endSeconds = timeToSeconds(stageTimes.endTime);
-
-  if (currentSeconds < startSeconds) {
-    const secondsUntilStart = startSeconds - currentSeconds;
-    setTimeStatus(`School starts in ${formatTime(secondsUntilStart)}`);
-  } else if (currentSeconds > endSeconds) {
-    setTimeStatus('School day has ended');
-  } else {
-    const secondsUntilEnd = endSeconds - currentSeconds;
-    setTimeStatus(`${formatTime(secondsUntilEnd)} until school ends`);
-  }
-}, [schoolTimes, stage]);
-
+  // For updateProgress
+  // In your updateProgress function
 const updateProgress = useCallback(() => {
   const stageTimes = schoolTimes[stage];
+  console.log(`Debug: Calculating progress for ${stage}`);
   
   if (!stageTimes?.startTime || !stageTimes?.endTime) {
+    console.log(`Debug: Missing times for ${stage}`);
     setProgress(0);
     return;
   }
+
+  // Test time conversion directly
+  const startTimeTest = timeToMinutes(stageTimes.startTime);
+  const endTimeTest = timeToMinutes(stageTimes.endTime);
+  console.log(`Debug: Time conversion test for ${stage}:`, {
+    startTimeStr: stageTimes.startTime,
+    startTimeMinutes: startTimeTest,
+    endTimeStr: stageTimes.endTime,
+    endTimeMinutes: endTimeTest
+  });
 
   const now = new Date();
   const currentTime = now.getHours() * 60 + now.getMinutes();
   const startTime = timeToMinutes(stageTimes.startTime);
   const endTime = timeToMinutes(stageTimes.endTime);
   
+  console.log(`Debug: Progress check for ${stage}:`, {
+    currentTime,
+    startTime,
+    endTime,
+    beforeStart: currentTime < startTime,
+    afterEnd: currentTime > endTime,
+    inProgress: currentTime >= startTime && currentTime <= endTime
+  });
+  
   if (currentTime < startTime) {
+    console.log(`Debug: ${stage} - School hasn't started yet`);
     setProgress(0);
   } else if (currentTime > endTime) {
+    console.log(`Debug: ${stage} - School day has ended`);
     setProgress(100);
   } else {
     const totalDuration = endTime - startTime;
     const elapsed = currentTime - startTime;
     const currentProgress = (elapsed / totalDuration) * 100;
+    console.log(`Debug: ${stage} - School in progress: ${elapsed}/${totalDuration} = ${currentProgress.toFixed(2)}%`);
     setProgress(Math.max(0, Math.min(100, currentProgress)));
   }
 }, [schoolTimes, stage]);
 
-  const loadSchoolTimes = async () => {
-    try {
-      const savedTimes = await AsyncStorage.getItem(SCHOOL_TIMES_KEY);
-      console.log('Loading school times:', savedTimes);
-      if (savedTimes) {
-        const parsedTimes = JSON.parse(savedTimes);
-        setSchoolTimes(parsedTimes);
-      }
-    } catch (error) {
-      console.error('Error loading school times:', error);
-    }
-  };
-
   // Update the useEffect for loading data
   useEffect(() => {
     loadSchedule();
-    loadSchoolTimes();
     return () => {
       isMounted.current = false;
     };
@@ -149,8 +162,26 @@ const updateProgress = useCallback(() => {
 
   // Update timer/progress when school times change
   useEffect(() => {
-    if (!schoolTimes[stage]) return;
+    console.log('Stage from params:', stage);
+    console.log('School times from context:', schoolTimes);
+    console.log('Current stage times:', schoolTimes[stage]);
+    
+    // Reset progress and time status immediately when stage changes
+    setProgress(0);
+    setTimeStatus('');
   
+    if (!schoolTimes[stage]) {
+      console.log('No times found for this stage');
+      return;
+    }
+    
+    if (!schoolTimes[stage].startTime || !schoolTimes[stage].endTime) {
+      console.log('Missing start or end time');
+      return;
+    }
+  
+    console.log('Setup timer with start:', schoolTimes[stage].startTime, 'end:', schoolTimes[stage].endTime);
+    
     let intervalId;
     
     const updateTime = () => {
@@ -164,17 +195,17 @@ const updateProgress = useCallback(() => {
   
     // Set interval for updates
     intervalId = setInterval(updateTime, 1000);
-
+  
     return () => {
       if (intervalId) {
         clearInterval(intervalId);
       }
     };
-  }, [schoolTimes, stage, updateProgress, updateTimeStatus]);
+  }, [stage, schoolTimes, updateProgress, updateTimeStatus]);
   
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} key={`container-${stage}`}>
       <Text style={styles.title}>Today's Schedule</Text>
 
       {/* Progress Bar OR Countdown */}
@@ -201,23 +232,13 @@ const updateProgress = useCallback(() => {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.progressContainer}>
-          {displayMode === 'progress' ? (
-            <>
-              <View style={[styles.progressBar, { width: `${progress}%` }]} />
-              <Text style={styles.progressText}>
-                {progress === 0 && !schoolTimes[stage]?.startTime 
-                  ? 'Please set school hours in Settings'
-                  : `${Math.round(progress)}% of school day complete`
-                }
-              </Text>
-            </>
-          ) : (
-            <Text style={[styles.progressText, styles.countdownText]}>
-              {timeStatus}
-            </Text>
-          )}
-        </View>
+        
+            <ProgressDisplay 
+              key={`progress-${stage}`} 
+              stage={stage} 
+              schoolTimes={schoolTimes} 
+            />
+              
       </View>
 
       {/* Add Schedule Item Form */}

@@ -1,9 +1,13 @@
 // app/(tabs)/_layout.js
 import { Tabs } from 'expo-router';
 import { FontAwesome, Foundation } from '@expo/vector-icons';
+import { SchoolTimeProvider } from "../context/SchoolTimeContext";
+import StageProvider from "../context/StageContext";
 
 export default function TabLayout() {
   return (
+    <StageProvider>
+    <SchoolTimeProvider>
     <Tabs screenOptions={{
       tabBarActiveTintColor: '#2563eb',
       headerShown: false,
@@ -72,5 +76,7 @@ export default function TabLayout() {
             }}
           />
     </Tabs>
+    </SchoolTimeProvider>
+    </StageProvider>
   );
 }

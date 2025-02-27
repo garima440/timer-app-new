@@ -1,12 +1,12 @@
-// app/(tabs)/schedule/index.js
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { FontAwesome } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useStage } from '../../context/StageContext';
 
 const SELECTED_STAGE_KEY = 'selectedStage';
 
+// Define views with more specific configuration for each stage
 const timeViews = {
   elementary: [
     { id: 'day', name: 'Day View', icon: 'clock-o', description: 'Class by class schedule' },
@@ -33,60 +33,60 @@ const timeViews = {
 export default function Schedule() {
   const router = useRouter();
   const [selectedView, setSelectedView] = useState(null);
-  const [currentStage, setCurrentStage] = useState(null);
+  
+  // Get the selected stage from context
+  const { selectedStage } = useStage();
 
-  // Load selected stage on mount
-  useEffect(() => {
-    loadSelectedStage();
-  }, []);
-
-  const loadSelectedStage = async () => {
-    try {
-      const savedStage = await AsyncStorage.getItem(SELECTED_STAGE_KEY);
-      if (savedStage) {
-        setCurrentStage(savedStage);
-      } else {
-        // If no stage selected, prompt user to select one in Home tab
-        alert('Please select your education stage in the Home tab first');
-      }
-    } catch (error) {
-      console.error('Error loading selected stage:', error);
-    }
-  };
-
+  // Get views specific to the current stage
+  const views = timeViews[selectedStage] || [];
+  
   const handleViewSelect = (view) => {
-    if (!currentStage) {
+    console.log('Selected Stage:', selectedStage);
+    console.log('Selected View:', view);
+
+    if (!selectedStage) {
+      console.log('No stage selected');
       alert('Please select your education stage in the Home tab first');
       return;
     }
-    setSelectedView(view);
-    router.push(`/schedule/${view.id}?stage=${currentStage}`);
-  };
+    
+    console.log('Navigating with:', {
+      path: `/schedule/${view.id}`,
+      stage: selectedStage
+    });
 
-  const views = timeViews[currentStage] || [];
+    setSelectedView(view);
+    router.push(`/schedule/${view.id}?stage=${selectedStage}`);
+  };
   
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>Choose Your View</Text>
       
-      <View style={styles.viewGrid}>
-        {views.map((view) => (
-          <TouchableOpacity
-            key={view.id}
-            style={[
-              styles.viewCard,
-              selectedView?.id === view.id && styles.selectedCard
-            ]}
-            onPress={() => handleViewSelect(view)}
-          >
-            <View style={styles.viewHeader}>
-              <FontAwesome name={view.icon} size={24} color="#4b5563" />
-              <Text style={styles.viewName}>{view.name}</Text>
-            </View>
-            <Text style={styles.viewDescription}>{view.description}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {views.length === 0 ? (
+        <Text style={styles.noViewsText}>
+          Please select your education stage in the Home tab
+        </Text>
+      ) : (
+        <View style={styles.viewGrid}>
+          {views.map((view) => (
+            <TouchableOpacity
+              key={view.id}
+              style={[
+                styles.viewCard,
+                selectedView?.id === view.id && styles.selectedCard
+              ]}
+              onPress={() => handleViewSelect(view)}
+            >
+              <View style={styles.viewHeader}>
+                <FontAwesome name={view.icon} size={24} color="#4b5563" />
+                <Text style={styles.viewName}>{view.name}</Text>
+              </View>
+              <Text style={styles.viewDescription}>{view.description}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -131,5 +131,11 @@ const styles = StyleSheet.create({
   viewDescription: {
     fontSize: 14,
     color: '#6b7280',
+  },
+  noViewsText: {
+    textAlign: 'center',
+    color: '#6b7280',
+    fontSize: 16,
+    padding: 16,
   },
 });

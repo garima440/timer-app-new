@@ -1,8 +1,8 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { FontAwesome } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useStage } from '../../context/StageContext';
 
 const SELECTED_STAGE_KEY = 'selectedStage';
 
@@ -38,7 +38,7 @@ const stages = [
 ];
 
 export default function Home() {
-  const [selectedStage, setSelectedStage] = useState(null);
+  const { selectedStage, updateSelectedStage } = useStage();
 
   // Load saved stage on mount
   useEffect(() => {
@@ -49,7 +49,8 @@ export default function Home() {
     try {
       const savedStage = await AsyncStorage.getItem(SELECTED_STAGE_KEY);
       if (savedStage) {
-        setSelectedStage(stages.find(stage => stage.id === savedStage));
+        // Just update with the ID, not the full object
+        updateSelectedStage(savedStage);
       }
     } catch (error) {
       console.error('Error loading selected stage:', error);
@@ -57,12 +58,9 @@ export default function Home() {
   };
 
   const handleStageSelect = async (stage) => {
-    setSelectedStage(stage);
-    try {
-      await AsyncStorage.setItem(SELECTED_STAGE_KEY, stage.id);
-    } catch (error) {
-      console.error('Error saving selected stage:', error);
-    }
+    console.log('Home - Selecting stage:', stage.id);
+    // Pass just the ID to update
+    updateSelectedStage(stage.id);
   };
 
   return (
@@ -75,7 +73,7 @@ export default function Home() {
             key={stage.id}
             style={[
               styles.stageCard,
-              selectedStage?.id === stage.id && styles.selectedCard
+              selectedStage === stage.id && styles.selectedCard
             ]}
             onPress={() => handleStageSelect(stage)}
           >
@@ -87,7 +85,7 @@ export default function Home() {
               <Text style={styles.stageDetails}>Grades: {stage.grades}</Text>
               <Text style={styles.stageDetails}>Ages: {stage.ages}</Text>
             </View>
-            {selectedStage?.id === stage.id && (
+            {selectedStage === stage.id && (
               <View style={styles.selectedIndicator}>
                 <FontAwesome name="check" size={16} color="#2563eb" />
                 <Text style={styles.selectedText}>Selected</Text>
@@ -99,7 +97,7 @@ export default function Home() {
 
       {selectedStage && (
         <Text style={styles.instruction}>
-          Go to the Schedule tab to view your {selectedStage.name.toLowerCase()} schedule
+          Go to the Schedule tab to view your {stages.find(s => s.id === selectedStage)?.name.toLowerCase() || ''} schedule
         </Text>
       )}
     </View>
