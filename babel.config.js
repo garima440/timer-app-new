@@ -14,7 +14,7 @@ module.exports = function (api) {
               '@utils': './utils'
             },
           },
-        ],
+        ]
       ],
     };
   };
