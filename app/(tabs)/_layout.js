@@ -3,11 +3,14 @@ import { Tabs } from 'expo-router';
 import { FontAwesome, Foundation } from '@expo/vector-icons';
 import { SchoolTimeProvider } from "../context/SchoolTimeContext";
 import StageProvider from "../context/StageContext";
+import { BadgeProvider } from "../context/BadgeContext"
 
 export default function TabLayout() {
   return (
+    
     <StageProvider>
     <SchoolTimeProvider>
+    <BadgeProvider>
     <Tabs screenOptions={{
       tabBarActiveTintColor: '#2563eb',
       headerShown: false,
@@ -60,6 +63,14 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="badges/index"
+        options={{
+          tabBarLabel: 'Badges',
+          title: 'Badges',
+          tabBarIcon: ({ color }) => <FontAwesome name="certificate" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="profile/index"
         options={{
           tabBarLabel: 'Profile',
@@ -76,7 +87,9 @@ export default function TabLayout() {
             }}
           />
     </Tabs>
+    </BadgeProvider>
     </SchoolTimeProvider>
     </StageProvider>
+    
   );
 }

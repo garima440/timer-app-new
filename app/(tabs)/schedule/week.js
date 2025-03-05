@@ -2,6 +2,8 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert 
 import { useLocalSearchParams } from 'expo-router';
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useBadges } from '../../context/BadgeContext';
+import { useSchoolTimes } from '../../context/SchoolTimeContext';
 
 const STORAGE_KEY = 'weeklyScheduleData';
 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -19,9 +21,26 @@ export default function WeekView() {
     progress: 0,
     status: ''
   });
+  
+  // Add badge integration
+  const { markDayComplete, updateActivityProgress } = useBadges();
+  const { isWithinAcademicYear } = useSchoolTimes();
+  
+  // Add state to track if week completion has been awarded
+  const [weekCompletionAwarded, setWeekCompletionAwarded] = useState(false);
 
   const updateWeekProgress = useCallback(() => {
     const now = new Date();
+    
+    // Check if date is within academic year
+    if (!isWithinAcademicYear(stage, now)) {
+      setWeekProgress({
+        progress: 0,
+        status: 'Outside of academic year'
+      });
+      return;
+    }
+    
     const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
     const currentTime = now.getHours() * 60 + now.getMinutes();
 
@@ -45,16 +64,23 @@ export default function WeekView() {
     let status;
     if (progress >= 100) {
       status = 'Week completed';
+      
+      // Only award badge once per week
+      if (!weekCompletionAwarded) {
+        markDayComplete('week');
+        setWeekCompletionAwarded(true);
+      }
     } else {
       const daysLeft = 5 - dayIndex;
       status = `${daysLeft} day${daysLeft > 1 ? 's' : ''} remaining`;
+      setWeekCompletionAwarded(false);
     }
 
     setWeekProgress({
       progress: Math.min(100, progress),
       status
     });
-  }, []);
+  }, [stage, isWithinAcademicYear, markDayComplete, weekCompletionAwarded]);
 
   useEffect(() => {
     loadSchedule();
@@ -108,6 +134,19 @@ export default function WeekView() {
     setSchedule(updatedSchedule);
     saveSchedule(updatedSchedule);
     setNewItem({ time: '', subject: '', location: '' });
+    
+    // Update schedule badge progress
+    updateActivityProgress('schedule_item_added');
+    
+    // Check if all days now have at least one class scheduled
+    const hasAllDaysScheduled = days.every(d => 
+      (updatedSchedule[d.toLowerCase()] || []).length > 0
+    );
+    
+    if (hasAllDaysScheduled) {
+      // Update badge for having a complete weekly schedule
+      updateActivityProgress('full_week_scheduled');
+    }
   };
 
   return (

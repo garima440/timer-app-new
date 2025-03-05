@@ -11,6 +11,7 @@ import {
 } from '../../utils/timeUtils';
 import { useSchoolTimes } from '../../context/SchoolTimeContext';
 import ProgressDisplay from '../../components/ProgressDisplay';
+import { useBadges } from '../../context/BadgeContext';
 
 export default function DayView() {
   const { stage } = useLocalSearchParams();
@@ -26,6 +27,8 @@ export default function DayView() {
     subject: '',
     location: ''
   });
+
+  const { markDayComplete, updateActivityProgress } = useBadges();
 
   const loadSchedule = async () => {
     try {
@@ -67,6 +70,7 @@ export default function DayView() {
     setSchedule(updatedSchedule);
     saveSchedule(updatedSchedule);
     setNewItem({ time: '', subject: '', location: '' });
+    updateActivityProgress('schedule_item_added');
   };
 
 
@@ -143,6 +147,7 @@ const updateProgress = useCallback(() => {
   } else if (currentTime > endTime) {
     console.log(`Debug: ${stage} - School day has ended`);
     setProgress(100);
+    markDayComplete(stage);
   } else {
     const totalDuration = endTime - startTime;
     const elapsed = currentTime - startTime;
@@ -150,7 +155,7 @@ const updateProgress = useCallback(() => {
     console.log(`Debug: ${stage} - School in progress: ${elapsed}/${totalDuration} = ${currentProgress.toFixed(2)}%`);
     setProgress(Math.max(0, Math.min(100, currentProgress)));
   }
-}, [schoolTimes, stage]);
+}, [schoolTimes, stage, markDayComplete]);
 
   // Update the useEffect for loading data
   useEffect(() => {
@@ -202,6 +207,26 @@ const updateProgress = useCallback(() => {
       }
     };
   }, [stage, schoolTimes, updateProgress, updateTimeStatus]);
+
+
+  useEffect(() => {
+    const checkEarlyArrival = () => {
+      const stageTimes = schoolTimes[stage];
+      if (!stageTimes?.startTime) return;
+      
+      const now = new Date();
+      const currentTime = now.getHours() * 60 + now.getMinutes();
+      const startTime = timeToMinutes(stageTimes.startTime);
+      
+      // If user opened the app at least 15 minutes before school starts
+      if (startTime - currentTime >= 15 && startTime - currentTime <= 30) {
+        updateActivityProgress('early_arrival');
+      }
+    };
+    
+    // Check once when view loads
+    checkEarlyArrival();
+  }, [stage, schoolTimes, updateActivityProgress]);
   
 
   return (
