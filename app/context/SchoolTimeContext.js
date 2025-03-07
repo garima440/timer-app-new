@@ -52,8 +52,61 @@ export function SchoolTimeProvider({ children }) {
     }
   };
 
+  // Function to check if a date is within the academic year for a specific stage
+  // This function uses the user-configured settings without default values
+  const isWithinAcademicYear = (stage, date = new Date()) => {
+    // Get the stage settings
+    const stageSettings = schoolTimes[stage];
+    
+    // If there are no year settings, return true (assume always in academic year)
+    if (!stageSettings || !stageSettings.yearStart || !stageSettings.yearEnd) {
+      console.log('No academic year settings for stage:', stage);
+      return true;
+    }
+    
+    try {
+      // Parse the year start and end dates
+      const yearStartDate = new Date(stageSettings.yearStart);
+      const yearEndDate = new Date(stageSettings.yearEnd);
+      
+      // Check if the current date is within the range
+      return date >= yearStartDate && date <= yearEndDate;
+    } catch (error) {
+      console.error('Error parsing date settings:', error);
+      return true; // Default to true on error
+    }
+  };
+
+  // Function to get current or next academic year based on settings
+  const getAcademicYear = (stage) => {
+    const stageSettings = schoolTimes[stage];
+    
+    // If no settings available, return current year
+    if (!stageSettings || !stageSettings.yearStart) {
+      const currentYear = new Date().getFullYear();
+      return `${currentYear}-${currentYear + 1}`;
+    }
+    
+    try {
+      // Use the configured year start to determine the academic year
+      const yearStartDate = new Date(stageSettings.yearStart);
+      const startYear = yearStartDate.getFullYear();
+      return `${startYear}-${startYear + 1}`;
+    } catch (error) {
+      console.error('Error parsing year start date:', error);
+      const currentYear = new Date().getFullYear();
+      return `${currentYear}-${currentYear + 1}`;
+    }
+  };
+
   return (
-    <SchoolTimeContext.Provider value={{ schoolTimes, updateTimes, loadTimes }}>
+    <SchoolTimeContext.Provider value={{ 
+      schoolTimes, 
+      updateTimes, 
+      loadTimes,
+      isWithinAcademicYear,
+      getAcademicYear
+    }}>
       {children}
     </SchoolTimeContext.Provider>
   );

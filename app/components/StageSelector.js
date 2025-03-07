@@ -1,105 +1,181 @@
-// components/StageSelector.js
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { FontAwesome } from '@expo/vector-icons';
-
-const StageIcon = {
-  elementary: 'child',
-  middle: 'book',
-  high: 'graduation-cap',
-  college: 'university'
-};
+import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { COLORS, TYPOGRAPHY, SPACING, BORDER_RADIUS, SHADOWS, getStageDesign } from '../theme';
 
 export const StageSelector = ({ stages, selectedStage, onSelect }) => {
+  // Function to render badge if there are notifications
+  const renderBadge = (stage) => {
+    if (stage.notifications && stage.notifications > 0) {
+      return (
+        <View style={styles.notificationBadge}>
+          <Text style={styles.notificationText}>
+            {stage.notifications > 9 ? '9+' : stage.notifications}
+          </Text>
+        </View>
+      );
+    }
+    return null;
+  };
+
   return (
     <View style={styles.container}>
-      {stages.map((stage) => (
-        <TouchableOpacity
-          key={stage.id}
-          style={[
-            styles.stageCard,
-            selectedStage?.id === stage.id && styles.selectedCard,
-          ]}
-          onPress={() => onSelect(stage)}
-        >
-          <View style={styles.iconContainer}>
-            <FontAwesome 
-              name={StageIcon[stage.id] || 'book'} 
-              size={24} 
-              color={selectedStage?.id === stage.id ? '#2563eb' : '#6b7280'} 
-            />
-          </View>
-          <View style={styles.stageInfo}>
-            <Text style={styles.stageName}>{stage.name}</Text>
-            <View style={styles.detailsContainer}>
-              <Text style={styles.stageDetails}>Grades: {stage.grades}</Text>
-              <Text style={styles.stageDetails}>Ages: {stage.typical_age}</Text>
-            </View>
-          </View>
-          {selectedStage?.id === stage.id && (
-            <View style={styles.checkmark}>
-              <FontAwesome name="check-circle" size={20} color="#2563eb" />
-            </View>
-          )}
-        </TouchableOpacity>
-      ))}
+      <Text style={styles.title}>Select Education Level</Text>
+      
+      <View style={styles.stagesList}>
+        {stages.map((stage) => {
+          const stageDesign = getStageDesign(stage.id);
+          const isSelected = selectedStage?.id === stage.id;
+          
+          return (
+            <TouchableOpacity
+              key={stage.id}
+              style={[
+                styles.stageCard,
+                isSelected && [styles.selectedCard, { borderColor: stageDesign.primaryColor }],
+              ]}
+              onPress={() => onSelect(stage)}
+              activeOpacity={0.8}
+            >
+              <View style={[
+                styles.iconContainer,
+                isSelected && { backgroundColor: stageDesign.primaryColor },
+              ]}>
+                <FontAwesome5 
+                  name={stageDesign.icon} 
+                  size={24} 
+                  color={isSelected ? COLORS.text.inverse : stageDesign.primaryColor} 
+                />
+                {renderBadge(stage)}
+              </View>
+              
+              <View style={styles.stageInfo}>
+                <Text style={styles.stageName}>{stage.name}</Text>
+                
+                <View style={styles.detailsContainer}>
+                  <View style={styles.detailRow}>
+                    <FontAwesome5 
+                      name="user-graduate" 
+                      size={12} 
+                      color={COLORS.text.tertiary} 
+                      style={styles.detailIcon} 
+                    />
+                    <Text style={styles.stageDetails}>Grades: {stage.grades}</Text>
+                  </View>
+                  
+                  <View style={styles.detailRow}>
+                    <FontAwesome5 
+                      name="birthday-cake" 
+                      size={12} 
+                      color={COLORS.text.tertiary} 
+                      style={styles.detailIcon} 
+                    />
+                    <Text style={styles.stageDetails}>Ages: {stage.typical_age}</Text>
+                  </View>
+                </View>
+              </View>
+              
+              {isSelected && (
+                <View style={styles.checkmark}>
+                  <FontAwesome5 
+                    name="check-circle" 
+                    size={20} 
+                    color={stageDesign.primaryColor} 
+                    solid 
+                  />
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
-    gap: 12,
+    padding: SPACING.md,
+  },
+  title: {
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: SPACING.md,
+  },
+  stagesList: {
+    gap: SPACING.md,
   },
   stageCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
+    padding: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+    backgroundColor: COLORS.background.primary,
     borderWidth: 2,
-    borderColor: '#e5e7eb',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 3.84,
-    elevation: 2,
+    borderColor: COLORS.neutral[200],
+    ...SHADOWS.sm,
   },
   selectedCard: {
-    borderColor: '#2563eb',
-    backgroundColor: '#f8fafc',
+    backgroundColor: COLORS.background.secondary,
+    ...SHADOWS.md,
   },
   iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#f3f4f6',
+    width: 56,
+    height: 56,
+    borderRadius: BORDER_RADIUS.circle,
+    backgroundColor: COLORS.background.tertiary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: SPACING.md,
+    position: 'relative',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: BORDER_RADIUS.circle,
+    backgroundColor: COLORS.error,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: COLORS.background.primary,
+  },
+  notificationText: {
+    color: COLORS.text.inverse,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontWeight: '700',
   },
   stageInfo: {
     flex: 1,
   },
   stageName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 4,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: SPACING.xs,
   },
   detailsContainer: {
-    gap: 2,
+    gap: SPACING.xs / 2,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  detailIcon: {
+    marginRight: SPACING.xs,
+    width: 14,
+    textAlign: 'center',
   },
   stageDetails: {
-    fontSize: 14,
-    color: '#6b7280',
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.text.secondary,
   },
   checkmark: {
-    marginLeft: 12,
+    marginLeft: SPACING.md,
   }
 });
 

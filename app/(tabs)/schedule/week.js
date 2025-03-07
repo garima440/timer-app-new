@@ -1,15 +1,39 @@
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import { useState, useEffect, useCallback } from 'react';
+import { 
+  View, 
+  Text, 
+  ScrollView, 
+  StyleSheet, 
+  TouchableOpacity, 
+  TextInput, 
+  Alert,
+  SafeAreaView,
+  StatusBar,
+  Animated
+} from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { useBadges } from '../../context/BadgeContext';
 import { useSchoolTimes } from '../../context/SchoolTimeContext';
+import { useStage } from '../../context/StageContext';
+import { 
+  COLORS, 
+  TYPOGRAPHY, 
+  SPACING, 
+  BORDER_RADIUS, 
+  SHADOWS,
+  getStageDesign,
+  ANIMATION
+} from '../../theme';
 
 const STORAGE_KEY = 'weeklyScheduleData';
 const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
 export default function WeekView() {
+  const router = useRouter();
   const { stage } = useLocalSearchParams();
+  const { stageDetails } = useStage();
   const [schedule, setSchedule] = useState({});
   const [editingDay, setEditingDay] = useState(null);
   const [newItem, setNewItem] = useState({
@@ -28,7 +52,11 @@ export default function WeekView() {
   
   // Add state to track if week completion has been awarded
   const [weekCompletionAwarded, setWeekCompletionAwarded] = useState(false);
-
+  const progressAnimation = useRef(new Animated.Value(0)).current;
+  
+  // Get stage-specific design
+  const stageDesign = getStageDesign(stage || 'high');
+  
   const updateWeekProgress = useCallback(() => {
     const now = new Date();
     
@@ -38,6 +66,13 @@ export default function WeekView() {
         progress: 0,
         status: 'Outside of academic year'
       });
+      
+      Animated.timing(progressAnimation, {
+        toValue: 0,
+        duration: ANIMATION.medium,
+        useNativeDriver: false,
+      }).start();
+      
       return;
     }
     
@@ -50,6 +85,13 @@ export default function WeekView() {
         progress: 0,
         status: 'Weekend - School resumes Monday'
       });
+      
+      Animated.timing(progressAnimation, {
+        toValue: 0,
+        duration: ANIMATION.medium,
+        useNativeDriver: false,
+      }).start();
+      
       return;
     }
 
@@ -76,11 +118,19 @@ export default function WeekView() {
       setWeekCompletionAwarded(false);
     }
 
+    const boundedProgress = Math.min(100, progress);
     setWeekProgress({
-      progress: Math.min(100, progress),
+      progress: boundedProgress,
       status
     });
-  }, [stage, isWithinAcademicYear, markDayComplete, weekCompletionAwarded]);
+    
+    Animated.timing(progressAnimation, {
+      toValue: boundedProgress,
+      duration: ANIMATION.medium,
+      useNativeDriver: false,
+    }).start();
+    
+  }, [stage, isWithinAcademicYear, markDayComplete, weekCompletionAwarded, progressAnimation]);
 
   useEffect(() => {
     loadSchedule();
@@ -149,188 +199,384 @@ export default function WeekView() {
     }
   };
 
+  const progressWidth = progressAnimation.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+  });
+
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>Weekly Schedule</Text>
-
-      {/* Week Progress Bar */}
-      <View style={styles.progressContainer}>
-        <View style={[styles.progressBar, { width: `${weekProgress.progress}%` }]} />
-        <Text style={styles.progressText}>{weekProgress.status}</Text>
-      </View>
-
-      {days.map((day) => (
-        <View key={day} style={styles.dayContainer}>
-          <View style={styles.dayHeader}>
-            <Text style={styles.dayTitle}>{day}</Text>
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={() => setEditingDay(editingDay === day ? null : day)}
-            >
-              <Text style={styles.editButtonText}>
-                {editingDay === day ? 'Done' : 'Edit'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {editingDay === day && (
-            <View style={styles.form}>
-              <TextInput
-                style={styles.input}
-                placeholder="Time (e.g., 8:30 AM)"
-                value={newItem.time}
-                onChangeText={(text) => setNewItem({ ...newItem, time: text })}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Subject"
-                value={newItem.subject}
-                onChangeText={(text) => setNewItem({ ...newItem, subject: text })}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Location"
-                value={newItem.location}
-                onChangeText={(text) => setNewItem({ ...newItem, location: text })}
-              />
-              <TouchableOpacity 
-                style={styles.addButton}
-                onPress={() => addScheduleItem(day)}
-              >
-                <Text style={styles.addButtonText}>Add Class</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <View style={styles.scheduleContainer}>
-            {(schedule[day.toLowerCase()] || []).map((item, index) => (
-              <View key={index} style={styles.classBlock}>
-                <Text style={styles.timeText}>{item.time}</Text>
-                <View style={styles.classInfo}>
-                  <Text style={styles.subjectText}>{item.subject}</Text>
-                  <Text style={styles.locationText}>{item.location}</Text>
-                </View>
-              </View>
-            ))}
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background.primary} />
+      <ScrollView 
+        style={styles.container}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <FontAwesome5 name="arrow-left" size={18} color={COLORS.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.title}>Weekly Schedule</Text>
+          <View style={[styles.stageBadge, { backgroundColor: stageDesign.primaryColor }]}>
+            <Text style={styles.stageText}>{stageDetails?.name || stage}</Text>
           </View>
         </View>
-      ))}
-    </ScrollView>
+
+        {/* Week Progress Bar */}
+        <View style={styles.progressCard}>
+          <View style={styles.progressHeader}>
+            <Text style={styles.progressTitle}>Week Progress</Text>
+            <Text style={styles.progressValue}>{Math.round(weekProgress.progress)}%</Text>
+          </View>
+          <View style={styles.progressContainer}>
+            <Animated.View 
+              style={[
+                styles.progressBar, 
+                { width: progressWidth, backgroundColor: stageDesign.progressBarColor }
+              ]} 
+            />
+          </View>
+          <Text style={styles.progressText}>{weekProgress.status}</Text>
+        </View>
+
+        {days.map((day) => (
+          <View key={day} style={styles.dayContainer}>
+            <View style={styles.dayHeader}>
+              <View style={styles.dayTitleContainer}>
+                <FontAwesome5 
+                  name="calendar-day" 
+                  size={16} 
+                  color={stageDesign.primaryColor}
+                  style={styles.dayIcon} 
+                />
+                <Text style={styles.dayTitle}>{day}</Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.editButton,
+                  editingDay === day && styles.activeEditButton,
+                  { backgroundColor: editingDay === day ? stageDesign.primaryColor : 'transparent' }
+                ]}
+                onPress={() => setEditingDay(editingDay === day ? null : day)}
+              >
+                <Text style={[
+                  styles.editButtonText,
+                  { color: editingDay === day ? COLORS.text.inverse : stageDesign.primaryColor }
+                ]}>
+                  {editingDay === day ? 'Done' : 'Edit'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {editingDay === day && (
+              <View style={styles.form}>
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Time</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., 8:30 AM"
+                    value={newItem.time}
+                    onChangeText={(text) => setNewItem({ ...newItem, time: text })}
+                  />
+                </View>
+                
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Subject</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., Mathematics"
+                    value={newItem.subject}
+                    onChangeText={(text) => setNewItem({ ...newItem, subject: text })}
+                  />
+                </View>
+                
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Location</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., Room 101"
+                    value={newItem.location}
+                    onChangeText={(text) => setNewItem({ ...newItem, location: text })}
+                  />
+                </View>
+                
+                <TouchableOpacity 
+                  style={[styles.addButton, { backgroundColor: stageDesign.primaryColor }]}
+                  onPress={() => addScheduleItem(day)}
+                >
+                  <FontAwesome5 name="plus" size={14} color={COLORS.text.inverse} style={styles.addButtonIcon} />
+                  <Text style={styles.addButtonText}>Add Class</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View style={styles.scheduleContainer}>
+              {(schedule[day.toLowerCase()] || []).length === 0 ? (
+                <View style={styles.emptyDayContainer}>
+                  <Text style={styles.emptyDayText}>No classes scheduled</Text>
+                  <TouchableOpacity 
+                    onPress={() => setEditingDay(day)}
+                    style={styles.addEmptyButton}
+                  >
+                    <Text style={[styles.addEmptyText, { color: stageDesign.primaryColor }]}>Add Class</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                (schedule[day.toLowerCase()] || []).map((item, index) => (
+                  <View key={index} style={styles.classBlock}>
+                    <View style={styles.timeContainer}>
+                      <Text style={styles.timeText}>{item.time}</Text>
+                      <View style={[styles.timeLine, { backgroundColor: stageDesign.primaryColor }]} />
+                    </View>
+                    <View style={[
+                      styles.classInfo, 
+                      { borderLeftColor: stageDesign.primaryColor }
+                    ]}>
+                      <Text style={styles.subjectText}>{item.subject}</Text>
+                      <View style={styles.locationContainer}>
+                        <FontAwesome5 
+                          name="map-marker-alt" 
+                          size={12} 
+                          color={COLORS.text.tertiary}
+                          style={styles.locationIcon} 
+                        />
+                        <Text style={styles.locationText}>{item.location}</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background.primary,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.background.primary,
+  },
+  contentContainer: {
+    padding: SPACING.md,
+    paddingBottom: SPACING.xxl,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.lg,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: BORDER_RADIUS.circle,
+    backgroundColor: COLORS.background.secondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.sm,
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginTop: 12,
-    marginBottom: 8,
-    textAlign: 'center',
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+  },
+  stageBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs / 2,
+    borderRadius: BORDER_RADIUS.md,
+  },
+  stageText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontWeight: '600',
+    color: COLORS.text.inverse,
+  },
+  progressCard: {
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.lg,
+    ...SHADOWS.sm,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  progressTitle: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+  },
+  progressValue: {
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontWeight: '700',
+    color: COLORS.text.primary,
   },
   progressContainer: {
-    height: 32,
-    backgroundColor: '#f3f4f6',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 16,
+    height: 8,
+    backgroundColor: COLORS.neutral[200],
+    borderRadius: BORDER_RADIUS.circle,
+    marginBottom: SPACING.xs,
     overflow: 'hidden',
   },
   progressBar: {
     height: '100%',
-    backgroundColor: '#4CAF50',
+    borderRadius: BORDER_RADIUS.circle,
   },
   progressText: {
-    position: 'absolute',
-    width: '100%',
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.text.secondary,
     textAlign: 'center',
-    lineHeight: 32,
-    fontSize: 13,
-    color: '#000',
   },
   dayContainer: {
-    marginBottom: 16,
-    paddingHorizontal: 16,
+    marginBottom: SPACING.lg,
   },
   dayHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f3f4f6',
-    padding: 8,
-    borderRadius: 8,
-    marginBottom: 8,
+    marginBottom: SPACING.sm,
+  },
+  dayTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dayIcon: {
+    marginRight: SPACING.xs,
   },
   dayTitle: {
-    fontSize: 16,
+    fontSize: TYPOGRAPHY.fontSize.lg,
     fontWeight: '600',
+    color: COLORS.text.primary,
   },
   editButton: {
-    backgroundColor: '#3b82f6',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 4,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: 'currentColor',
+  },
+  activeEditButton: {
+    borderColor: 'transparent',
   },
   editButtonText: {
-    color: '#fff',
-    fontSize: 12,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     fontWeight: '500',
   },
   form: {
-    backgroundColor: '#f3f4f6',
-    padding: 8,
-    borderRadius: 8,
-    marginBottom: 8,
+    backgroundColor: COLORS.background.secondary,
+    padding: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+    marginBottom: SPACING.md,
+    ...SHADOWS.sm,
+  },
+  formGroup: {
+    marginBottom: SPACING.sm,
+  },
+  formLabel: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '500',
+    color: COLORS.text.secondary,
+    marginBottom: SPACING.xs / 2,
   },
   input: {
-    backgroundColor: '#fff',
-    padding: 8,
-    borderRadius: 6,
-    marginBottom: 8,
-    fontSize: 13,
+    backgroundColor: COLORS.background.primary,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.neutral[200],
+    fontSize: TYPOGRAPHY.fontSize.md,
   },
   addButton: {
-    backgroundColor: '#10b981',
-    padding: 8,
-    borderRadius: 6,
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
+    padding: SPACING.sm,
+    borderRadius: BORDER_RADIUS.md,
+  },
+  addButtonIcon: {
+    marginRight: SPACING.xs,
   },
   addButtonText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontWeight: '600',
+    color: COLORS.text.inverse,
   },
   scheduleContainer: {
-    marginLeft: 8,
+    paddingLeft: SPACING.sm,
+  },
+  emptyDayContainer: {
+    padding: SPACING.md,
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: BORDER_RADIUS.md,
+    alignItems: 'center',
+  },
+  emptyDayText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.text.secondary,
+    marginBottom: SPACING.xs,
+  },
+  addEmptyButton: {
+    padding: SPACING.xs,
+  },
+  addEmptyText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '600',
   },
   classBlock: {
     flexDirection: 'row',
-    marginBottom: 8,
+    marginBottom: SPACING.md,
+  },
+  timeContainer: {
+    width: 65,
     alignItems: 'center',
   },
   timeText: {
-    width: 65,
-    fontSize: 12,
-    color: '#4b5563',
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '500',
+    color: COLORS.text.secondary,
+    marginBottom: SPACING.xs,
+  },
+  timeLine: {
+    width: 2,
+    height: '85%',
+    opacity: 0.5,
   },
   classInfo: {
     flex: 1,
-    backgroundColor: '#f8fafc',
-    padding: 8,
-    borderRadius: 6,
+    backgroundColor: COLORS.background.primary,
+    padding: SPACING.sm,
+    borderRadius: BORDER_RADIUS.md,
     borderLeftWidth: 3,
-    borderLeftColor: '#2563eb',
+    ...SHADOWS.xs,
   },
   subjectText: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: TYPOGRAPHY.fontSize.md,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: SPACING.xs / 2,
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationIcon: {
+    marginRight: SPACING.xs / 2,
   },
   locationText: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginTop: 2,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.text.tertiary,
   },
 });
