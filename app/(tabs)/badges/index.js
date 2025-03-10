@@ -51,6 +51,10 @@ export default function BadgesScreen() {
   const [badgeSections, setBadgeSections] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // References for scrolling
+  const stageScrollViewRef = useRef(null);
+  const categoryScrollViewRef = useRef(null);
+  
   // Animation values
   const streakAnimation = useRef(new Animated.Value(0)).current;
   
@@ -65,6 +69,43 @@ export default function BadgesScreen() {
     // Process and group badges
     processBadges();
   }, [badges, selectedCategory, selectedStage]);
+
+  // Setup effect to scroll to currently selected buttons when filters change
+  useEffect(() => {
+    // Scroll to selected category
+    if (categoryScrollViewRef.current) {
+      const selectedIndex = CATEGORIES.findIndex(c => c.id === selectedCategory);
+      // When selecting any category, make sure to scroll to the beginning if it's the first item
+      if (selectedIndex === 0) {
+        categoryScrollViewRef.current.scrollTo({
+          x: 0,
+          animated: true
+        });
+      } else if (selectedIndex > 0) {
+        categoryScrollViewRef.current.scrollTo({
+          x: Math.max(0, (selectedIndex - 1) * 120), // Show one button before for context
+          animated: true
+        });
+      }
+    }
+    
+    // Scroll to selected stage
+    if (stageScrollViewRef.current) {
+      const selectedIndex = STAGES.findIndex(s => s.id === selectedStage);
+      // When selecting any stage, make sure to scroll to the beginning if it's the first item
+      if (selectedIndex === 0) {
+        stageScrollViewRef.current.scrollTo({
+          x: 0,
+          animated: true
+        });
+      } else if (selectedIndex > 0) {
+        stageScrollViewRef.current.scrollTo({
+          x: Math.max(0, (selectedIndex - 1) * 100), // Show one button before for context
+          animated: true
+        });
+      }
+    }
+  }, [selectedCategory, selectedStage]);
   
   // Process badges for display
   const processBadges = () => {
@@ -73,9 +114,27 @@ export default function BadgesScreen() {
     // Filter badges based on selected category and stage
     const filteredBadges = badges.filter(badge => {
       const categoryMatch = selectedCategory === 'all' || badge.type === selectedCategory;
-      const stageMatch = selectedStage === 'all' || badge.stage === selectedStage || !badge.stage;
+      const stageMatch = selectedStage === 'all' || badge.stage === selectedStage;
       return categoryMatch && stageMatch;
     });
+    
+    // If no badges match the filters and we're filtering by stage, 
+    // let's dynamically create stage-specific versions of existing badges
+    if (filteredBadges.length === 0 && selectedStage !== 'all') {
+      const stageSpecificBadges = badges
+        .filter(badge => !badge.stage && (selectedCategory === 'all' || badge.type === selectedCategory))
+        .map(badge => ({
+          ...badge,
+          id: `${badge.id}_${selectedStage}`,
+          name: `${selectedStage.charAt(0).toUpperCase() + selectedStage.slice(1)} ${badge.name}`,
+          stage: selectedStage,
+          earned: false, // Default to not earned for these dynamically created badges
+          description: `${badge.description} in ${selectedStage.charAt(0).toUpperCase() + selectedStage.slice(1)} School`
+        }));
+      
+      // Add these to our filtered badges
+      filteredBadges.push(...stageSpecificBadges);
+    }
     
     // Group badges by type for section list
     const groupedBadges = filteredBadges.reduce((groups, badge) => {
@@ -316,11 +375,12 @@ export default function BadgesScreen() {
           
           {/* Category Filter */}
           <ScrollView 
+            ref={categoryScrollViewRef}
             horizontal 
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.categoryFilters}
           >
-            {CATEGORIES.map(category => (
+            {CATEGORIES.map((category, index) => (
               <TouchableOpacity
                 key={category.id}
                 style={[
@@ -330,7 +390,19 @@ export default function BadgesScreen() {
                     { backgroundColor: COLORS.primary.main }
                   ]
                 ]}
-                onPress={() => setSelectedCategory(category.id)}
+                onPress={() => {
+                  setSelectedCategory(category.id);
+                  
+                  // Scroll to make selected category visible
+                  setTimeout(() => {
+                    if (categoryScrollViewRef.current && index > 1) {
+                      categoryScrollViewRef.current.scrollTo({
+                        x: index * 120, // Approximate width of button
+                        animated: true
+                      });
+                    }
+                  }, 100);
+                }}
               >
                 <FontAwesome5 
                   name={category.icon} 
@@ -352,11 +424,12 @@ export default function BadgesScreen() {
           
           {/* Stage Filter */}
           <ScrollView 
+            ref={stageScrollViewRef}
             horizontal 
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.stageFilters}
           >
-            {STAGES.map(stage => {
+            {STAGES.map((stage, index) => {
               const stageDesign = getStageDesign(stage.id !== 'all' ? stage.id : 'high');
               const isActive = selectedStage === stage.id;
               
@@ -370,7 +443,19 @@ export default function BadgesScreen() {
                       { backgroundColor: stage.id === 'all' ? COLORS.primary.main : stageDesign.primaryColor }
                     ]
                   ]}
-                  onPress={() => setSelectedStage(stage.id)}
+                  onPress={() => {
+                    setSelectedStage(stage.id);
+                    
+                    // Scroll to make selected button visible
+                    setTimeout(() => {
+                      if (stageScrollViewRef.current && index > 1) {
+                        stageScrollViewRef.current.scrollTo({
+                          x: index * 100, // Approximate width of button
+                          animated: true
+                        });
+                      }
+                    }, 100);
+                  }}
                 >
                   <FontAwesome5 
                     name={stage.icon} 
