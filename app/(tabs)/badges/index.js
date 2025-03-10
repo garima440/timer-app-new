@@ -1,411 +1,822 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, SafeAreaView, ScrollView } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  FlatList, 
+  SafeAreaView, 
+  ScrollView,
+  Animated,
+  Image,
+  StatusBar,
+  SectionList
+} from 'react-native';
 import { useBadges } from '../../context/BadgeContext';
-import { FontAwesome } from '@expo/vector-icons';
-import { StatusBar } from 'expo-status-bar';
+import { useStage } from '../../context/StageContext';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { 
+  COLORS, 
+  TYPOGRAPHY, 
+  SPACING, 
+  BORDER_RADIUS, 
+  SHADOWS,
+  getStageDesign,
+} from '../../theme';
 
 // Badge categories
 const CATEGORIES = [
-  { id: 'all', name: 'All Badges' },
-  { id: 'milestone', name: 'Achievements' },
-  { id: 'streak', name: 'Streaks' },
-  { id: 'activity', name: 'Activities' },
-  { id: 'habit', name: 'Habits' }
+  { id: 'all', name: 'All Badges', icon: 'layer-group' },
+  { id: 'milestone', name: 'Achievements', icon: 'trophy' },
+  { id: 'streak', name: 'Streaks', icon: 'fire' },
+  { id: 'activity', name: 'Activities', icon: 'tasks' },
+  { id: 'habit', name: 'Habits', icon: 'calendar-check' }
 ];
 
 // Educational stages
 const STAGES = [
-  { id: 'all', name: 'All Stages' },
-  { id: 'elementary', name: 'Elementary' },
-  { id: 'middle', name: 'Middle School' },
-  { id: 'high', name: 'High School' },
-  { id: 'college', name: 'College' }
+  { id: 'all', name: 'All Stages', icon: 'graduation-cap' },
+  { id: 'elementary', name: 'Elementary', icon: 'child' },
+  { id: 'middle', name: 'Middle School', icon: 'book' },
+  { id: 'high', name: 'High School', icon: 'graduation-cap' },
+  { id: 'college', name: 'College', icon: 'university' }
 ];
 
 export default function BadgesScreen() {
   const { badges, dayStreak, weekStreak } = useBadges();
+  const { selectedStage: userSelectedStage } = useStage();
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedStage, setSelectedStage] = useState('all');
+  const [selectedStage, setSelectedStage] = useState(userSelectedStage || 'all');
+  const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid'
+  const [badgeSections, setBadgeSections] = useState([]);
+  const [loading, setLoading] = useState(true);
   
-  // Filter badges based on selected category and stage
-  const filteredBadges = badges.filter(badge => {
-    const categoryMatch = selectedCategory === 'all' || badge.type === selectedCategory;
-    const stageMatch = selectedStage === 'all' || badge.stage === selectedStage || !badge.stage;
-    return categoryMatch && stageMatch;
-  });
+  // Animation values
+  const streakAnimation = useRef(new Animated.Value(0)).current;
   
-  // Group badges by type for displaying in sections
-  const badgesByType = filteredBadges.reduce((groups, badge) => {
-    const group = groups[badge.type] || [];
-    group.push(badge);
-    groups[badge.type] = group;
-    return groups;
-  }, {});
+  useEffect(() => {
+    // Animate streak counter on mount
+    Animated.timing(streakAnimation, {
+      toValue: 1,
+      duration: 1000,
+      useNativeDriver: true
+    }).start();
+    
+    // Process and group badges
+    processBadges();
+  }, [badges, selectedCategory, selectedStage]);
   
-  const renderBadge = ({ item }) => (
-    <TouchableOpacity
-      style={[
-        styles.badgeItem,
-        item.earned ? styles.earnedBadge : styles.lockedBadge
-      ]}
-    >
-      <Text style={styles.badgeIcon}>{item.icon}</Text>
-      <View style={styles.badgeInfo}>
-        <Text style={[styles.badgeName, item.earned ? styles.earnedText : styles.lockedText]}>
-          {item.name}
-        </Text>
-        <Text style={styles.badgeDescription}>{item.description}</Text>
+  // Process badges for display
+  const processBadges = () => {
+    setLoading(true);
+    
+    // Filter badges based on selected category and stage
+    const filteredBadges = badges.filter(badge => {
+      const categoryMatch = selectedCategory === 'all' || badge.type === selectedCategory;
+      const stageMatch = selectedStage === 'all' || badge.stage === selectedStage || !badge.stage;
+      return categoryMatch && stageMatch;
+    });
+    
+    // Group badges by type for section list
+    const groupedBadges = filteredBadges.reduce((groups, badge) => {
+      const type = badge.type;
+      const group = groups[type] || [];
+      group.push(badge);
+      groups[type] = group;
+      return groups;
+    }, {});
+    
+    // Convert to format needed for SectionList
+    const sections = Object.entries(groupedBadges).map(([type, items]) => ({
+      title: formatSectionTitle(type),
+      data: items,
+      type
+    }));
+    
+    // Sort sections alphabetically
+    sections.sort((a, b) => a.title.localeCompare(b.title));
+    
+    // Sort badges within each section (earned first, then by progress)
+    sections.forEach(section => {
+      section.data.sort((a, b) => {
+        // First by earned status
+        if (a.earned && !b.earned) return -1;
+        if (!a.earned && b.earned) return 1;
         
-        {item.stage && (
-          <View style={styles.stageTag}>
-            <Text style={styles.stageText}>{
-              item.stage === 'elementary' ? 'Elementary' :
-              item.stage === 'middle' ? 'Middle School' :
-              item.stage === 'high' ? 'High School' :
-              item.stage === 'college' ? 'College' : ''
-            }</Text>
-          </View>
-        )}
+        // Then by progress percentage if not earned
+        if (!a.earned && !b.earned) {
+          const aProgress = (a.progress / a.target) || 0;
+          const bProgress = (b.progress / b.target) || 0;
+          return bProgress - aProgress;
+        }
         
-        {!item.earned && item.progress !== undefined && (
-          <View style={styles.progressContainer}>
-            <View
-              style={[
-                styles.progressBar,
-                { width: `${(item.progress / item.target) * 100}%` }
-              ]}
-            />
-            <Text style={styles.progressText}>
-              {item.progress} / {item.target}
-            </Text>
-          </View>
-        )}
+        // Sort earned badges by earned date (newest first)
+        if (a.earned && b.earned) {
+          return new Date(b.earnedDate) - new Date(a.earnedDate);
+        }
         
-        {item.earned && item.earnedDate && (
-          <Text style={styles.earnedDate}>
-            Earned on {new Date(item.earnedDate).toLocaleDateString()}
+        return 0;
+      });
+    });
+    
+    setBadgeSections(sections);
+    setLoading(false);
+  };
+  
+  const formatSectionTitle = (type) => {
+    switch(type) {
+      case 'milestone': return 'Achievements';
+      case 'streak': return 'Streaks';
+      case 'activity': return 'Activities';
+      case 'habit': return 'Habits';
+      default: return type.charAt(0).toUpperCase() + type.slice(1);
+    }
+  };
+  
+  const getBadgeTypeIcon = (type) => {
+    switch(type) {
+      case 'milestone': return 'trophy';
+      case 'streak': return 'fire';
+      case 'activity': return 'tasks';
+      case 'habit': return 'calendar-check';
+      default: return 'award';
+    }
+  };
+  
+  const getStageColor = (stageId) => {
+    if (!stageId) return COLORS.primary.main;
+    return getStageDesign(stageId).primaryColor;
+  };
+  
+  const renderBadge = ({ item }) => {
+    const badgeStageColor = getStageColor(item.stage);
+    const progressPercentage = item.target ? Math.min(100, (item.progress / item.target) * 100) : 0;
+    
+    return (
+      <TouchableOpacity
+        style={[
+          styles.badgeItem,
+          item.earned 
+            ? [styles.earnedBadge, { borderLeftColor: badgeStageColor }] 
+            : styles.lockedBadge
+        ]}
+        activeOpacity={0.8}
+      >
+        <View style={[
+          styles.badgeIconContainer,
+          { backgroundColor: item.earned ? badgeStageColor + '20' : COLORS.neutral[100] }
+        ]}>
+          <Text style={styles.badgeIcon}>{item.icon}</Text>
+          {item.earned && (
+            <View style={[styles.earnedIconOverlay, { backgroundColor: badgeStageColor }]}>
+              <FontAwesome5 name="check" size={10} color={COLORS.text.inverse} />
+            </View>
+          )}
+        </View>
+        
+        <View style={styles.badgeInfo}>
+          <Text style={[
+            styles.badgeName,
+            item.earned ? { color: badgeStageColor } : styles.lockedText
+          ]}>
+            {item.name}
           </Text>
-        )}
+          <Text style={styles.badgeDescription}>{item.description}</Text>
+          
+          {item.stage && (
+            <View style={[
+              styles.stageTag,
+              { backgroundColor: getStageColor(item.stage) + '15' }
+            ]}>
+              <FontAwesome5 
+                name={STAGES.find(s => s.id === item.stage)?.icon || 'graduation-cap'} 
+                size={10} 
+                color={getStageColor(item.stage)}
+                style={styles.stageIcon}
+              />
+              <Text style={[styles.stageText, { color: getStageColor(item.stage) }]}>
+                {STAGES.find(s => s.id === item.stage)?.name || item.stage}
+              </Text>
+            </View>
+          )}
+          
+          {!item.earned && item.progress !== undefined && (
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBackground}>
+                <View
+                  style={[
+                    styles.progressBar,
+                    { width: `${progressPercentage}%`, backgroundColor: badgeStageColor }
+                  ]}
+                />
+              </View>
+              <Text style={styles.progressText}>
+                {item.progress} / {item.target}
+              </Text>
+            </View>
+          )}
+          
+          {item.earned && item.earnedDate && (
+            <Text style={styles.earnedDate}>
+              <FontAwesome5 name="calendar-alt" size={10} color={COLORS.text.tertiary} />
+              {' '}Earned on {new Date(item.earnedDate).toLocaleDateString()}
+            </Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+  
+  const renderSectionHeader = ({ section }) => (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionTitleContainer}>
+        <FontAwesome5 
+          name={getBadgeTypeIcon(section.type)} 
+          size={16} 
+          color={COLORS.primary.main}
+          style={styles.sectionIcon}
+        />
+        <Text style={styles.sectionTitle}>{section.title}</Text>
       </View>
-    </TouchableOpacity>
+      <Text style={styles.badgeCount}>{section.data.length}</Text>
+    </View>
   );
   
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="auto" />
-      
-      {/* Header with streak info */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Achievements</Text>
-        
-        <View style={styles.streakContainer}>
-          <View style={styles.streakItem}>
-            <Text style={styles.streakIcon}>🔥</Text>
-            <Text style={styles.streakText}>{dayStreak} day streak</Text>
-          </View>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background.primary} />
+      <View style={styles.container}>
+        {/* Header with streak info */}
+        <View style={styles.header}>
+          <Text style={styles.title}>Achievements</Text>
           
-          <View style={styles.streakDivider} />
-          
-          <View style={styles.streakItem}>
-            <Text style={styles.streakIcon}>📅</Text>
-            <Text style={styles.streakText}>{weekStreak} week streak</Text>
-          </View>
-        </View>
-      </View>
-      
-      {/* Filters */}
-      <View style={styles.filtersContainer}>
-        {/* Category Filter */}
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryFilters}
-        >
-          {CATEGORIES.map(category => (
-            <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.categoryButton,
-                selectedCategory === category.id && styles.categoryButtonActive
-              ]}
-              onPress={() => setSelectedCategory(category.id)}
-            >
-              <Text 
-                style={[
-                  styles.categoryButtonText,
-                  selectedCategory === category.id && styles.categoryButtonTextActive
-                ]}
-              >
-                {category.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        
-        {/* Stage Filter */}
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.stageFilters}
-        >
-          {STAGES.map(stage => (
-            <TouchableOpacity
-              key={stage.id}
-              style={[
-                styles.stageButton,
-                selectedStage === stage.id && styles.stageButtonActive
-              ]}
-              onPress={() => setSelectedStage(stage.id)}
-            >
-              <Text 
-                style={[
-                  styles.stageButtonText,
-                  selectedStage === stage.id && styles.stageButtonTextActive
-                ]}
-              >
-                {stage.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-      
-      {/* Badge List */}
-      <ScrollView style={styles.badgeList}>
-        {Object.entries(badgesByType).length > 0 ? (
-          Object.entries(badgesByType).map(([type, badgeList]) => (
-            <View key={type} style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                {type === 'milestone' ? 'Achievements' :
-                 type === 'streak' ? 'Streaks' :
-                 type === 'activity' ? 'Activities' :
-                 type === 'habit' ? 'Habits' :
-                 type.charAt(0).toUpperCase() + type.slice(1)}
-              </Text>
-              <FlatList
-                data={badgeList}
-                renderItem={renderBadge}
-                keyExtractor={item => item.id}
-                scrollEnabled={false}
-              />
+          <Animated.View 
+            style={[
+              styles.streakContainer,
+              { opacity: streakAnimation, transform: [{ scale: streakAnimation }] }
+            ]}
+          >
+            <View style={styles.streakItem}>
+              <View style={[styles.streakIconContainer, { backgroundColor: COLORS.warning }]}>
+                <FontAwesome5 name="fire" size={16} color={COLORS.text.inverse} />
+              </View>
+              <View style={styles.streakInfo}>
+                <Text style={styles.streakValue}>{dayStreak}</Text>
+                <Text style={styles.streakLabel}>Day Streak</Text>
+              </View>
             </View>
-          ))
-        ) : (
-          <View style={styles.emptyContainer}>
-            <FontAwesome name="trophy" size={64} color="#e5e7eb" />
-            <Text style={styles.emptyText}>No badges in this category yet</Text>
-            <Text style={styles.emptySubtext}>Complete activities to earn badges</Text>
+            
+            <View style={styles.streakDivider} />
+            
+            <View style={styles.streakItem}>
+              <View style={[styles.streakIconContainer, { backgroundColor: COLORS.success }]}>
+                <FontAwesome5 name="calendar-week" size={16} color={COLORS.text.inverse} />
+              </View>
+              <View style={styles.streakInfo}>
+                <Text style={styles.streakValue}>{weekStreak}</Text>
+                <Text style={styles.streakLabel}>Week Streak</Text>
+              </View>
+            </View>
+          </Animated.View>
+        </View>
+        
+        {/* Filters */}
+        <View style={styles.filtersContainer}>
+          {/* View Mode Toggle */}
+          <View style={styles.viewToggle}>
+            <TouchableOpacity
+              style={[
+                styles.viewToggleButton,
+                viewMode === 'list' && styles.activeViewToggle,
+                { borderTopLeftRadius: BORDER_RADIUS.md, borderBottomLeftRadius: BORDER_RADIUS.md }
+              ]}
+              onPress={() => setViewMode('list')}
+            >
+              <FontAwesome5 
+                name="list" 
+                size={14} 
+                color={viewMode === 'list' ? COLORS.text.inverse : COLORS.text.secondary} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.viewToggleButton,
+                viewMode === 'grid' && styles.activeViewToggle,
+                { borderTopRightRadius: BORDER_RADIUS.md, borderBottomRightRadius: BORDER_RADIUS.md }
+              ]}
+              onPress={() => setViewMode('grid')}
+            >
+              <FontAwesome5 
+                name="th-large" 
+                size={14} 
+                color={viewMode === 'grid' ? COLORS.text.inverse : COLORS.text.secondary} 
+              />
+            </TouchableOpacity>
           </View>
+          
+          {/* Category Filter */}
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryFilters}
+          >
+            {CATEGORIES.map(category => (
+              <TouchableOpacity
+                key={category.id}
+                style={[
+                  styles.categoryButton,
+                  selectedCategory === category.id && [
+                    styles.categoryButtonActive,
+                    { backgroundColor: COLORS.primary.main }
+                  ]
+                ]}
+                onPress={() => setSelectedCategory(category.id)}
+              >
+                <FontAwesome5 
+                  name={category.icon} 
+                  size={14} 
+                  color={selectedCategory === category.id ? COLORS.text.inverse : COLORS.text.secondary}
+                  style={styles.categoryIcon} 
+                />
+                <Text 
+                  style={[
+                    styles.categoryButtonText,
+                    selectedCategory === category.id && styles.categoryButtonTextActive
+                  ]}
+                >
+                  {category.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          
+          {/* Stage Filter */}
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.stageFilters}
+          >
+            {STAGES.map(stage => {
+              const stageDesign = getStageDesign(stage.id !== 'all' ? stage.id : 'high');
+              const isActive = selectedStage === stage.id;
+              
+              return (
+                <TouchableOpacity
+                  key={stage.id}
+                  style={[
+                    styles.stageButton,
+                    isActive && [
+                      styles.stageButtonActive,
+                      { backgroundColor: stage.id === 'all' ? COLORS.primary.main : stageDesign.primaryColor }
+                    ]
+                  ]}
+                  onPress={() => setSelectedStage(stage.id)}
+                >
+                  <FontAwesome5 
+                    name={stage.icon} 
+                    size={12} 
+                    color={isActive ? COLORS.text.inverse : COLORS.text.secondary}
+                    style={styles.stageButtonIcon} 
+                  />
+                  <Text 
+                    style={[
+                      styles.stageButtonText,
+                      isActive && styles.stageButtonTextActive
+                    ]}
+                  >
+                    {stage.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+        
+        {/* Badge List */}
+        {viewMode === 'list' ? (
+          <SectionList
+            sections={badgeSections}
+            renderItem={renderBadge}
+            renderSectionHeader={renderSectionHeader}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.badgeListContent}
+            stickySectionHeadersEnabled={false}
+            ListEmptyComponent={() => (
+              <View style={styles.emptyContainer}>
+                <FontAwesome5 name="trophy" size={64} color={COLORS.neutral[300]} />
+                <Text style={styles.emptyText}>No badges in this category yet</Text>
+                <Text style={styles.emptySubtext}>Complete activities to earn badges</Text>
+              </View>
+            )}
+          />
+        ) : (
+          <FlatList
+            data={badges.filter(badge => {
+              const categoryMatch = selectedCategory === 'all' || badge.type === selectedCategory;
+              const stageMatch = selectedStage === 'all' || badge.stage === selectedStage || !badge.stage;
+              return categoryMatch && stageMatch;
+            })}
+            renderItem={({ item }) => (
+              <View style={styles.gridItem}>
+                <View style={[
+                  styles.gridBadgeContainer,
+                  item.earned ? 
+                    { backgroundColor: getStageColor(item.stage) + '20', borderColor: getStageColor(item.stage) } :
+                    { backgroundColor: COLORS.neutral[100], borderColor: COLORS.neutral[200] }
+                ]}>
+                  <Text style={styles.gridBadgeIcon}>{item.icon}</Text>
+                  {item.earned && (
+                    <View style={[
+                      styles.gridEarnedBadge,
+                      { backgroundColor: getStageColor(item.stage) }
+                    ]}>
+                      <FontAwesome5 name="check" size={10} color={COLORS.text.inverse} />
+                    </View>
+                  )}
+                </View>
+                <Text 
+                  style={[
+                    styles.gridBadgeName,
+                    item.earned ? { color: getStageColor(item.stage) } : { color: COLORS.text.secondary }
+                  ]}
+                  numberOfLines={1}
+                >
+                  {item.name}
+                </Text>
+                {!item.earned && item.progress !== undefined && (
+                  <View style={styles.gridProgressBar}>
+                    <View 
+                      style={[
+                        styles.gridProgressFill,
+                        { width: `${(item.progress / item.target) * 100}%`, backgroundColor: getStageColor(item.stage) }
+                      ]} 
+                    />
+                  </View>
+                )}
+              </View>
+            )}
+            numColumns={3}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.gridContainer}
+            ListEmptyComponent={() => (
+              <View style={styles.emptyContainer}>
+                <FontAwesome5 name="trophy" size={64} color={COLORS.neutral[300]} />
+                <Text style={styles.emptyText}>No badges in this category yet</Text>
+                <Text style={styles.emptySubtext}>Complete activities to earn badges</Text>
+              </View>
+            )}
+          />
         )}
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background.primary,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: COLORS.background.primary,
   },
   header: {
-    padding: 16,
-    backgroundColor: '#fff',
+    padding: SPACING.md,
+    backgroundColor: COLORS.background.primary,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: COLORS.neutral[200],
   },
   title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginBottom: 12,
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: SPACING.sm,
   },
   streakContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f3f4f6',
-    padding: 8,
-    borderRadius: 16,
     justifyContent: 'center',
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.sm,
+    ...SHADOWS.sm,
   },
   streakItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  streakIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: BORDER_RADIUS.circle,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.xs,
+  },
+  streakInfo: {
+    alignItems: 'flex-start',
+  },
+  streakValue: {
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    lineHeight: TYPOGRAPHY.lineHeight.md,
+  },
+  streakLabel: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: COLORS.text.secondary,
+    lineHeight: TYPOGRAPHY.lineHeight.xs,
   },
   streakDivider: {
     width: 1,
-    height: 24,
-    backgroundColor: '#d1d5db',
-    marginHorizontal: 8,
-  },
-  streakIcon: {
-    fontSize: 18,
-    marginRight: 6,
-  },
-  streakText: {
-    fontWeight: '600',
-    color: '#4b5563',
-    fontSize: 14,
+    height: 32,
+    backgroundColor: COLORS.neutral[300],
+    marginHorizontal: SPACING.md,
   },
   filtersContainer: {
-    backgroundColor: '#fff',
-    paddingBottom: 8,
+    backgroundColor: COLORS.background.primary,
+    paddingBottom: SPACING.sm,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: COLORS.neutral[200],
+  },
+  viewToggle: {
+    flexDirection: 'row',
+    alignSelf: 'flex-end',
+    margin: SPACING.sm,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.neutral[300],
+    overflow: 'hidden',
+  },
+  viewToggleButton: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    backgroundColor: COLORS.background.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 40,
+  },
+  activeViewToggle: {
+    backgroundColor: COLORS.primary.main,
   },
   categoryFilters: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  stageFilters: {
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    gap: SPACING.xs,
   },
   categoryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-    backgroundColor: '#f3f4f6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.background.secondary,
+    ...SHADOWS.xs,
   },
   categoryButtonActive: {
-    backgroundColor: '#3b82f6',
+    ...SHADOWS.sm,
+  },
+  categoryIcon: {
+    marginRight: SPACING.xs,
   },
   categoryButtonText: {
     fontWeight: '500',
-    color: '#4b5563',
-    fontSize: 14,
+    color: COLORS.text.secondary,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   categoryButtonTextActive: {
-    color: '#fff',
+    color: COLORS.text.inverse,
+  },
+  stageFilters: {
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.xs,
+    paddingBottom: SPACING.sm,
+    gap: SPACING.xs,
   },
   stageButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginRight: 8,
-    backgroundColor: '#f3f4f6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs / 2,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.background.secondary,
+    ...SHADOWS.xs,
   },
   stageButtonActive: {
-    backgroundColor: '#10b981',
+    ...SHADOWS.sm,
+  },
+  stageButtonIcon: {
+    marginRight: SPACING.xs / 2,
   },
   stageButtonText: {
     fontWeight: '500',
-    color: '#6b7280',
-    fontSize: 12,
+    color: COLORS.text.secondary,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
   stageButtonTextActive: {
-    color: '#fff',
+    color: COLORS.text.inverse,
   },
-  badgeList: {
-    flex: 1,
+  badgeListContent: {
+    padding: SPACING.md,
   },
-  section: {
-    margin: 16,
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sectionIcon: {
+    marginRight: SPACING.xs,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: TYPOGRAPHY.fontSize.md,
     fontWeight: '600',
-    marginBottom: 8,
-    color: '#4b5563',
+    color: COLORS.text.primary,
+  },
+  badgeCount: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.text.tertiary,
+    backgroundColor: COLORS.neutral[100],
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: SPACING.xs / 4,
+    borderRadius: BORDER_RADIUS.xs,
   },
   badgeItem: {
     flexDirection: 'row',
-    padding: 16,
-    marginBottom: 12,
-    borderRadius: 12,
-    backgroundColor: '#fff',
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.background.primary,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
+    borderLeftWidth: 3,
+    borderLeftColor: 'transparent',
+    ...SHADOWS.sm,
   },
   earnedBadge: {
-    borderLeftWidth: 3,
-    borderLeftColor: '#10b981',
+    opacity: 1,
   },
   lockedBadge: {
-    opacity: 0.7,
+    opacity: 0.8,
+  },
+  badgeIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: BORDER_RADIUS.circle,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.md,
+    position: 'relative',
   },
   badgeIcon: {
-    fontSize: 36,
-    marginRight: 16,
+    fontSize: 24,
+  },
+  earnedIconOverlay: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRadius: BORDER_RADIUS.circle,
+    backgroundColor: COLORS.success,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.background.primary,
   },
   badgeInfo: {
     flex: 1,
   },
   badgeName: {
-    fontSize: 16,
+    fontSize: TYPOGRAPHY.fontSize.md,
     fontWeight: '600',
-    marginBottom: 2,
+    marginBottom: SPACING.xs / 2,
   },
   earnedText: {
-    color: '#10b981',
+    color: COLORS.success,
   },
   lockedText: {
-    color: '#4b5563',
+    color: COLORS.text.secondary,
   },
   badgeDescription: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 4,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.text.secondary,
+    marginBottom: SPACING.xs,
   },
   stageTag: {
-    backgroundColor: '#f3f4f6',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: SPACING.xs / 4,
+    borderRadius: BORDER_RADIUS.xs,
     alignSelf: 'flex-start',
-    marginTop: 4,
-    marginBottom: 4,
+    marginBottom: SPACING.xs,
+  },
+  stageIcon: {
+    marginRight: SPACING.xs / 2,
   },
   stageText: {
-    fontSize: 10,
-    color: '#6b7280',
+    fontSize: TYPOGRAPHY.fontSize.xs,
     fontWeight: '500',
   },
   progressContainer: {
+    marginTop: SPACING.xs,
+  },
+  progressBackground: {
     height: 6,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 3,
-    marginTop: 8,
-    position: 'relative',
+    backgroundColor: COLORS.neutral[200],
+    borderRadius: BORDER_RADIUS.xs,
+    marginBottom: SPACING.sm,
   },
   progressBar: {
     height: '100%',
-    backgroundColor: '#3b82f6',
-    borderRadius: 3,
+    borderRadius: BORDER_RADIUS.xs,
   },
   progressText: {
-    position: 'absolute',
-    right: 0,
-    top: 8,
-    fontSize: 10,
-    color: '#6b7280',
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: COLORS.text.tertiary,
   },
   earnedDate: {
-    fontSize: 10,
-    color: '#6b7280',
-    marginTop: 4,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: COLORS.text.tertiary,
+    marginTop: SPACING.xs,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
-    marginTop: 64,
+    padding: SPACING.xl,
+    marginTop: SPACING.xl,
   },
   emptyText: {
-    fontSize: 16,
-    color: '#6b7280',
-    marginTop: 16,
+    fontSize: TYPOGRAPHY.fontSize.md,
+    color: COLORS.text.secondary,
     fontWeight: '500',
+    marginTop: SPACING.md,
   },
   emptySubtext: {
-    fontSize: 14,
-    color: '#9ca3af',
-    marginTop: 4,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: COLORS.text.tertiary,
+    marginTop: SPACING.xs,
+  },
+  
+  // Grid view styles
+  gridContainer: {
+    padding: SPACING.md,
+  },
+  gridItem: {
+    flex: 1/3,
+    aspectRatio: 0.9,
+    padding: SPACING.xs,
+    alignItems: 'center',
+  },
+  gridBadgeContainer: {
+    width: '80%',
+    aspectRatio: 1,
+    borderRadius: BORDER_RADIUS.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    ...SHADOWS.sm,
+    position: 'relative',
+    marginBottom: SPACING.xs,
+  },
+  gridBadgeIcon: {
+    fontSize: 32,
+  },
+  gridEarnedBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    width: 20,
+    height: 20,
+    borderRadius: BORDER_RADIUS.circle,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.background.primary,
+  },
+  gridBadgeName: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: SPACING.xs / 2,
+  },
+  gridProgressBar: {
+    width: '80%',
+    height: 4,
+    backgroundColor: COLORS.neutral[200],
+    borderRadius: BORDER_RADIUS.xs,
+  },
+  gridProgressFill: {
+    height: '100%',
+    borderRadius: BORDER_RADIUS.xs,
   }
 });
