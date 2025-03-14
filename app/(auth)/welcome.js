@@ -159,7 +159,7 @@ export default function Welcome() {
             />
           </TouchableOpacity>
           
-          <View style={styles.featuresContainer}>
+          {/* <View style={styles.featuresContainer}>
             <View style={styles.featureItem}>
               <FontAwesome5 name="calendar-check" size={16} color="#FFFFFF" />
               <Text style={styles.featureText}>Track Milestones</Text>
@@ -172,7 +172,7 @@ export default function Welcome() {
               <FontAwesome5 name="medal" size={16} color="#FFFFFF" />
               <Text style={styles.featureText}>Record Achievements</Text>
             </View>
-          </View>
+          </View> */}
         </Animated.View>
       </View>
     </SafeAreaView>
